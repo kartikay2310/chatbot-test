@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Chatbot</title>
+    <script src="https://code.jquery.com/jquery-3.3.1.min.js"></script>
+</head>
+<body>
+    <h1>Chat with our bot</h1>
+    <div id="chatbox">
+        <p><b>Bot:</b> Hello! Type 'start', 'hi', or 'hello' to begin.</p>
+    </div>
+    <input id="userInput" type="text">
+    <button onclick="sendMessage()">Send</button>
+
+    <script>
+        function sendMessage() {
+            var userText = $("#userInput").val();
+            $.get("/get", {msg: userText}).done(function(data) {
+                $("#chatbox").append("<p><b>You:</b> " + userText + "</p>");
+                $("#chatbox").append("<p><b>Bot:</b> " + data.response + "</p>");
+                $("#userInput").val("");
+                
+                if (data.end_conversation) {
+                    $("#userInput").hide();
+                    $("button").hide();
+                }
+            });
+        }
+    </script>
+</body>
+</html>
