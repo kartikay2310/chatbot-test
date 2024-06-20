@@ -1,0 +1,155 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Chatbot</title>
+    <script src="https://code.jquery.com/jquery-3.3.1.min.js"></script>
+    <style>
+        body {
+            background-color: #f0f0f0;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            margin: 0;
+        }
+        #chat-container {
+            width: 375px;
+            height: 667px;
+            border: 1px solid #ccc;
+            border-radius: 20px;
+            overflow: hidden;
+            box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
+            background-color: white;
+            display: flex;
+            flex-direction: column;
+        }
+        #chatbox {
+            flex: 1;
+            padding: 10px;
+            overflow-y: auto;
+            display: flex;
+            flex-direction: column;
+        }
+        .message {
+            max-width: 70%;
+            padding: 10px;
+            border-radius: 10px;
+            margin-bottom: 10px;
+        }
+        .user {
+            align-self: flex-end;
+            background-color: #007bff;
+            color: white;
+        }
+        .bot {
+            align-self: flex-start;
+            background-color: #e1e1e1;
+        }
+        #input-container {
+            display: flex;
+            border-top: 1px solid #ccc;
+        }
+        #userInput {
+            flex: 1;
+            padding: 10px;
+            border: none;
+            border-radius: 0;
+        }
+        button {
+            padding: 10px 20px;
+            border: none;
+            background-color: #007bff;
+            color: white;
+            cursor: pointer;
+        }
+        button:hover {
+            background-color: #0056b3;
+        }
+        #userInput:focus, button:focus {
+            outline: none;
+        }
+        .option-buttons {
+            display: flex;
+            flex-direction: column;
+            margin-top: 10px;
+        }
+        .option-button {
+            margin-bottom: 5px;
+            padding: 10px;
+            border: none;
+            background-color: #007bff;
+            color: white;
+            cursor: pointer;
+            border-radius: 5px;
+            text-align: left;
+        }
+        .option-button:hover {
+            background-color: #0056b3;
+        }
+    </style>
+</head>
+<body>
+    <div id="chat-container">
+        <div id="chatbox">
+            <div class="message bot"><b>Bot:</b> Hello! Type 'start', 'hi', or 'hello' to begin.</div>
+        </div>
+        <div id="input-container">
+            <input id="userInput" type="text" placeholder="Type your message here...">
+            <button onclick="sendMessage()">Send</button>
+        </div>
+    </div>
+
+    <script>
+        function sendMessage() {
+            var userText = $("#userInput").val();
+            if (userText.trim() === "") return;
+
+            $("#chatbox").append('<div class="message user"><b>You:</b> ' + userText + '</div>');
+            $.get("/get", {msg: userText}).done(function(data) {
+                $("#chatbox").append('<div class="message bot"><b>Bot:</b> ' + data.response + '</div>');
+                $("#userInput").val("");
+
+                if (data.end_conversation) {
+                    $("#input-container").hide();
+                } else if (data.buttons.length > 0) {
+                    displayOptions(data.buttons);
+                }
+
+                $("#chatbox").scrollTop($("#chatbox")[0].scrollHeight);
+            });
+        }
+
+        function displayOptions(options) {
+            $("#input-container").hide();
+            var buttonsContainer = $('<div class="option-buttons"></div>');
+            options.forEach(option => {
+                var button = $('<button class="option-button">' + option + '</button>');
+                button.click(function() {
+                    $("#chatbox").append('<div class="message user"><b>You:</b> ' + option + '</div>');
+                    $.get("/get", {msg: option.split(":")[0]}).done(function(data) {
+                        $("#chatbox").append('<div class="message bot"><b>Bot:</b> ' + data.response + '</div>');
+                        if (data.end_conversation) {
+                            $("#input-container").hide();
+                        } else if (data.buttons.length > 0) {
+                            displayOptions(data.buttons);
+                        } else {
+                            $("#input-container").show();
+                        }
+                        buttonsContainer.remove();
+                        $("#chatbox").scrollTop($("#chatbox")[0].scrollHeight);
+                    });
+                });
+                buttonsContainer.append(button);
+            });
+            $("#chatbox").append(buttonsContainer);
+            $("#chatbox").scrollTop($("#chatbox")[0].scrollHeight);
+        }
+
+        $("#userInput").on("keypress", function(e) {
+            if (e.which == 13) {
+                sendMessage();
+            }
+        });
+    </script>
+</body>
+</html>
