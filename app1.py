@@ -10,7 +10,6 @@ def home():
 def get_bot_response():
     user_input = request.args.get('msg')
     response, end_conversation, buttons = chat_logic(user_input)
-    save_conversation(f"User: {user_input}\nBot: {response}\n")
     return jsonify(response=response, end_conversation=end_conversation, buttons=buttons)
 
 def chat_logic(user_input):
@@ -56,10 +55,6 @@ def chat_logic(user_input):
             return "You chose F. Here is your final response for path B -> F. Bye!", True, []
 
     return "Invalid input. Please start by typing 'start', 'hi', or 'hello'.", False, []
-
-def save_conversation(conversation):
-    with open("conversation.txt", "a") as file:
-        file.write(conversation)
 
 if __name__ == "__main__":
     app.run()
