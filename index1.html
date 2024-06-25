@@ -17,7 +17,7 @@
             width: 375px;
             height: 667px;
             border: 1px solid #ccc;
-            border-radius: 20px;
+            border-radius: 30px;
             overflow: hidden;
             box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
             background-color: white;
@@ -35,9 +35,11 @@
         .message {
             max-width: 70%;
             padding: 10px;
-            border-radius: 10px;
+            border-radius: 20px;
             margin-bottom: 10px;
             word-wrap: break-word;
+            position: relative;
+            box-shadow: 0 1px 0.5px rgba(0, 0, 0, 0.13);
         }
         .user {
             align-self: flex-end;
@@ -53,13 +55,16 @@
             display: flex;
             padding: 10px;
             background-color: #f0f0f0;
+            border-top: 1px solid #ccc;
         }
         #userInput {
             flex: 1;
             padding: 10px;
-            border: 1px solid #ccc;
+            border: none;
             border-radius: 20px;
             margin-right: 10px;
+            border: 1px solid #ccc;
+            outline: none;
         }
         button {
             padding: 10px 20px;
@@ -87,8 +92,8 @@
             background-color: #007bff;
             color: white;
             cursor: pointer;
-            border-radius: 5px;
-            text-align: left;
+            border-radius: 20px;
+            text-align: center;
         }
         .option-button:hover {
             background-color: #0056b3;
