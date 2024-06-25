@@ -1,15 +1,9 @@
-from flask import Flask, render_template, request, jsonify, session
-from flask_session import Session
+from flask import Flask, render_template, request, jsonify
 
 app = Flask(__name__)
-app.secret_key = 'your_secret_key'
-app.config['SESSION_TYPE'] = 'filesystem'
-Session(app)
 
 @app.route("/")
 def home():
-    # Clear the session data to reset the conversation
-    session.clear()
     return render_template("index.html")
 
 @app.route("/get", methods=["GET"])
@@ -19,40 +13,38 @@ def get_bot_response():
     return jsonify(response=response, end_conversation=end_conversation, buttons=buttons)
 
 def chat_logic(user_input):
-    if 'step' not in session:
-        session['step'] = 0
+    if not hasattr(chat_logic, "step"):
+        chat_logic.step = 0
 
-    step = session['step']
-
-    if user_input.lower() in ["start", "hi", "hello"] and step == 0:
-        session['step'] = 1
+    if user_input.lower() in ["start", "hi", "hello"] and chat_logic.step == 0:
+        chat_logic.step = 1
         return "Please provide your OS details:", False, []
 
-    if step == 1:
-        session['os_details'] = user_input
-        session['step'] = 2
+    if chat_logic.step == 1:
+        chat_logic.os_details = user_input
+        chat_logic.step += 1
         return "Please provide your driver version:", False, []
 
-    if step == 2:
-        session['driver_version'] = user_input
+    if chat_logic.step == 2:
+        chat_logic.driver_version = user_input
 
         # Save the OS details and driver version to a text file
         with open("user_details.txt", "w") as file:
-            file.write(f"OS details: {session['os_details']}\n")
-            file.write(f"Driver version: {session['driver_version']}\n")
+            file.write(f"OS details: {chat_logic.os_details}\n")
+            file.write(f"Driver version: {chat_logic.driver_version}\n")
 
-        session['step'] = 3
+        chat_logic.step += 1
         return "Choose an option:", False, ["A: Option A", "B: Option B"]
 
-    if step == 3:
+    if chat_logic.step == 3:
         if user_input.lower() == "a":
-            session['step'] = 4
+            chat_logic.step += 1
             return "You chose A. Now choose:", False, ["C: Option C", "D: Option D"]
         elif user_input.lower() == "b":
-            session['step'] = 4
+            chat_logic.step += 1
             return "You chose B. Now choose:", False, ["E: Option E", "F: Option F"]
 
-    if step == 4:
+    if chat_logic.step == 4:
         if user_input.lower() == "c":
             return "You chose C. Here is your final response for path A -> C. Bye!", True, []
         elif user_input.lower() == "d":
