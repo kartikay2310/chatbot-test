@@ -2,7 +2,6 @@
 <html>
 <head>
     <title>Chatbot</title>
-    <script src="https://code.jquery.com/jquery-3.3.1.min.js"></script>
     <style>
         body {
             background-color: #f0f0f0;
@@ -113,51 +112,78 @@
 
     <script>
         function sendMessage() {
-            var userText = $("#userInput").val();
+            var userInput = document.getElementById("userInput");
+            var userText = userInput.value;
             if (userText.trim() === "") return;
 
-            $("#chatbox").append('<div class="message user"><b>You:</b> ' + userText + '</div>');
-            $.get("/get", {msg: userText}).done(function(data) {
-                $("#chatbox").append('<div class="message bot"><b>Bot:</b> ' + data.response + '</div>');
-                $("#userInput").val("");
+            var chatbox = document.getElementById("chatbox");
+            var userMessage = document.createElement("div");
+            userMessage.className = "message user";
+            userMessage.innerHTML = "<b>You:</b> " + userText;
+            chatbox.appendChild(userMessage);
 
-                if (data.end_conversation) {
-                    $("#input-container").hide();
-                } else if (data.buttons.length > 0) {
-                    displayOptions(data.buttons);
-                }
+            fetch(`/get?msg=${encodeURIComponent(userText)}`)
+                .then(response => response.json())
+                .then(data => {
+                    var botMessage = document.createElement("div");
+                    botMessage.className = "message bot";
+                    botMessage.innerHTML = "<b>Bot:</b> " + data.response;
+                    chatbox.appendChild(botMessage);
+                    userInput.value = "";
 
-                $("#chatbox").scrollTop($("#chatbox")[0].scrollHeight);
-            });
+                    if (data.end_conversation) {
+                        document.getElementById("input-container").style.display = 'none';
+                    } else if (data.buttons.length > 0) {
+                        displayOptions(data.buttons);
+                    }
+
+                    chatbox.scrollTop = chatbox.scrollHeight;
+                });
         }
 
         function displayOptions(options) {
-            $("#input-container").hide();
-            var buttonsContainer = $('<div class="option-buttons"></div>');
+            document.getElementById("input-container").style.display = 'none';
+            var buttonsContainer = document.createElement("div");
+            buttonsContainer.className = "option-buttons";
+
             options.forEach(option => {
-                var button = $('<button class="option-button">' + option + '</button>');
-                button.click(function() {
-                    $("#chatbox").append('<div class="message user"><b>You:</b> ' + option + '</div>');
-                    $.get("/get", {msg: option.split(":")[0]}).done(function(data) {
-                        $("#chatbox").append('<div class="message bot"><b>Bot:</b> ' + data.response + '</div>');
-                        if (data.end_conversation) {
-                            $("#input-container").hide();
-                        } else if (data.buttons.length > 0) {
-                            displayOptions(data.buttons);
-                        } else {
-                            $("#input-container").show();
-                        }
-                        buttonsContainer.remove();
-                        $("#chatbox").scrollTop($("#chatbox")[0].scrollHeight);
-                    });
+                var button = document.createElement("button");
+                button.className = "option-button";
+                button.innerHTML = option;
+                button.addEventListener("click", function() {
+                    var chatbox = document.getElementById("chatbox");
+                    var userMessage = document.createElement("div");
+                    userMessage.className = "message user";
+                    userMessage.innerHTML = "<b>You:</b> " + option;
+                    chatbox.appendChild(userMessage);
+
+                    fetch(`/get?msg=${encodeURIComponent(option.split(":")[0])}`)
+                        .then(response => response.json())
+                        .then(data => {
+                            var botMessage = document.createElement("div");
+                            botMessage.className = "message bot";
+                            botMessage.innerHTML = "<b>Bot:</b> " + data.response;
+                            chatbox.appendChild(botMessage);
+
+                            if (data.end_conversation) {
+                                document.getElementById("input-container").style.display = 'none';
+                            } else if (data.buttons.length > 0) {
+                                displayOptions(data.buttons);
+                            } else {
+                                document.getElementById("input-container").style.display = 'flex';
+                            }
+                            buttonsContainer.remove();
+                            chatbox.scrollTop = chatbox.scrollHeight;
+                        });
                 });
-                buttonsContainer.append(button);
+                buttonsContainer.appendChild(button);
             });
-            $("#chatbox").append(buttonsContainer);
-            $("#chatbox").scrollTop($("#chatbox")[0].scrollHeight);
+
+            document.getElementById("chatbox").appendChild(buttonsContainer);
+            document.getElementById("chatbox").scrollTop = document.getElementById("chatbox").scrollHeight;
         }
 
-        $("#userInput").on("keypress", function(e) {
+        document.getElementById("userInput").addEventListener("keypress", function(e) {
             if (e.which == 13) {
                 sendMessage();
             }
