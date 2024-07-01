@@ -49,8 +49,8 @@ async def handle_activity(request):
     await adapter.process_activity(activity, auth_header, bot.on_message_activity)
     return web.Response(status=200)
 
-APP_ID = "your_app_id"
-APP_PASSWORD = "your_app_password"
+APP_ID = "b0045053-f73c-4dbf-91d8-ce61e3a4bb58"
+APP_PASSWORD = "7536c460-2e72-4315-9be1-6a3b6dd3c786"
 
 adapter_settings = BotFrameworkAdapterSettings(APP_ID, APP_PASSWORD)
 adapter = BotFrameworkAdapter(adapter_settings)
