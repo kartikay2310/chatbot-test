@@ -62,9 +62,8 @@ class TeamsBot:
                     await self._end_conversation(turn_context)
                     self.conversation_state[user_id]["state"] = "chat_options"
                 elif text == "software related query":
-                    await self._show_contact_info_global(turn_context)
-                    await self._end_conversation(turn_context)
-                    self.conversation_state[user_id]["state"] = "chat_options"
+                    await self._software_ques_1(turn_context)
+                    self.conversation_state[user_id]["state"] = "software_related_query_check"
                 else:
                     await self._invalid_option(turn_context)
                     await self._ask_licence_issue(turn_context)
@@ -77,6 +76,27 @@ class TeamsBot:
                 else:
                     await self._invalid_option(turn_context)
                     await self._ask_license_not_activated_issue(turn_context)
+            elif state == "software_related_query_check":
+                if text == "yes":
+                    await self._end_conversation(turn_context)
+                    self.conversation_state[user_id]["state"] = "chat_options"
+                elif text == "no":
+                    await self._software_ques_2(turn_context)
+                    self.conversation_state[user_id]["state"] = "software_related_query_check_2"
+                else:
+                    await self._invalid_option(turn_context)
+                    await self._software_ques_1(turn_context)
+            elif state == "software_related_query_check_2":
+                if text == "yes":
+                    await self._end_conversation(turn_context)
+                    self.conversation_state[user_id]["state"] = "chat_options"
+                elif text == "no":
+                    await self._show_contact_info_global(turn_context)
+                    await self._end_conversation(turn_context)
+                    self.conversation_state[user_id]["state"] = "chat_options"
+                else:
+                    await self._invalid_option(turn_context)
+                    await self._software_ques_2(turn_context, next_step=True)
             elif state == "chat_options":
                 if text == "download":
                     await self._send_chat_file(turn_context, user_id)
@@ -178,14 +198,48 @@ class TeamsBot:
         await turn_context.send_activity(contact_message)
         self.conversation_state[turn_context.activity.from_property.id]["chat_log"].append(f"Bot: {contact_message}")
 
+    async def _software_ques_1(self, turn_context: TurnContext, next_step=False):
+        contact_message = "Check for valid license and required license count is present in lecensing tool LCT/FLM."
+        await turn_context.send_activity(contact_message)
+        self.conversation_state[turn_context.activity.from_property.id]["chat_log"].append(f"Bot: {contact_message}")
+
+        if not next_step:
+            reply = Activity(
+                type=ActivityTypes.message,
+                text="Did this resolve your issue?",
+                suggested_actions={
+                    "actions": [
+                        {"type": "imBack", "title": "Yes", "value": "yes"},
+                        {"type": "imBack", "title": "No", "value": "no"},
+                    ]
+                },
+            )
+            await turn_context.send_activity(reply)
+            self.conversation_state[turn_context.activity.from_property.id]["chat_log"].append("Bot: Did this resolve your issue?")
+
+    async def _software_ques_2(self, turn_context: TurnContext, next_step=False):
+        contact_message = "Collect client service/System services kernel dump from all PO machine in architecture to verify licencse acquisition."
+        await turn_context.send_activity(contact_message)
+        self.conversation_state[turn_context.activity.from_property.id]["chat_log"].append(f"Bot: {contact_message}")
+
+        if not next_step:
+            reply = Activity(
+                type=ActivityTypes.message,
+                text="Did this resolve your issue?",
+                suggested_actions={
+                    "actions": [
+                        {"type": "imBack", "title": "Yes", "value": "yes"},
+                        {"type": "imBack", "title": "No", "value": "no"},
+                    ]
+                },
+            )
+            await turn_context.send_activity(reply)
+            self.conversation_state[turn_context.activity.from_property.id]["chat_log"].append("Bot: Did this resolve your issue?")
+
     async def _show_contact_info_global(self, turn_context: TurnContext):
-        msg1 ="Check for valid license and required license count is present in lecensing tool LCT/FLM."
-        msg2= "Collect client service/System services kernel dump from all PO machine in architecture to verify licencse acquisition."
-        msg3 = "Please contact support at global-ems-tech-support@schneider-electric.com with PO Logs, Architecture and ;icense machine details."
-        await turn_context.send_activity(msg1)
-        await turn_context.send_activity(msg2)
-        await turn_context.send_activity(msg3)
-        self.conversation_state[turn_context.activity.from_property.id]["chat_log"].append(f"Bot: {msg1+msg2+msg3}")
+        msg = "Please contact support at global-ems-tech-support@schneider-electric.com with PO Logs, Architecture, and licence machine details."
+        await turn_context.send_activity(msg)
+        self.conversation_state[turn_context.activity.from_property.id]["chat_log"].append(f"Bot: {msg}")
 
     async def _invalid_option(self, turn_context: TurnContext):
         await turn_context.send_activity("Invalid option. Please select one of the provided options.")
@@ -198,10 +252,9 @@ class TeamsBot:
         issue = self.conversation_state[user_id].get("issue", "Not provided")
         licence_issue = self.conversation_state[user_id].get("licence_issue", "Not provided")
 
-
         summary = f"Thank you for your responses.\nOS Details: {os_details}\nEPO Version: {epo_version}\nIssue: {issue}\nLicence Issue: {licence_issue}"
         await turn_context.send_activity(summary)
-        #self.conversation_state[user_id]["chat_log"].append(f"Bot: {summary}")
+        self.conversation_state[user_id]["chat_log"].append(f"Bot: {summary}")
 
         await self._show_chat_options(turn_context)
 
