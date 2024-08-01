@@ -58,7 +58,11 @@ class TeamsBot:
                     await self._ask_license_not_activated_issue(turn_context)
                     self.conversation_state[user_id]["state"] = "license_not_activated_issue"
                 elif text == "incorrect version/quantity":
-                    await self._show_contact_info(turn_context)
+                    await self._show_contact_info_pme(turn_context)
+                    await self._end_conversation(turn_context)
+                    self.conversation_state[user_id]["state"] = "chat_options"
+                elif text == "software related query":
+                    await self._show_contact_info_global(turn_context)
                     await self._end_conversation(turn_context)
                     self.conversation_state[user_id]["state"] = "chat_options"
                 else:
@@ -67,7 +71,7 @@ class TeamsBot:
             elif state == "license_not_activated_issue":
                 if text == "license already in use":
                     self.conversation_state[user_id]["licence_issue"] = "license already in use"
-                    await self._show_contact_info(turn_context)
+                    await self._show_contact_info_pme(turn_context)
                     await self._end_conversation(turn_context)
                     self.conversation_state[user_id]["state"] = "chat_options"
                 else:
@@ -169,10 +173,19 @@ class TeamsBot:
         await turn_context.send_activity(reply)
         self.conversation_state[turn_context.activity.from_property.id]["chat_log"].append("Bot: What issue are you facing with licence activation?")
 
-    async def _show_contact_info(self, turn_context: TurnContext):
+    async def _show_contact_info_pme(self, turn_context: TurnContext):
         contact_message = "Please contact support at pme-ordersupport@schneider-electric.com with your ActivationID and other requirements."
         await turn_context.send_activity(contact_message)
         self.conversation_state[turn_context.activity.from_property.id]["chat_log"].append(f"Bot: {contact_message}")
+
+    async def _show_contact_info_global(self, turn_context: TurnContext):
+        msg1 ="Check for valid license and required license count is present in lecensing tool LCT/FLM."
+        msg2= "Collect client service/System services kernel dump from all PO machine in architecture to verify licencse acquisition."
+        msg3 = "Please contact support at global-ems-tech-support@schneider-electric.com with PO Logs, Architecture and ;icense machine details."
+        await turn_context.send_activity(msg1)
+        await turn_context.send_activity(msg2)
+        await turn_context.send_activity(msg3)
+        self.conversation_state[turn_context.activity.from_property.id]["chat_log"].append(f"Bot: {msg1+msg2+msg3}")
 
     async def _invalid_option(self, turn_context: TurnContext):
         await turn_context.send_activity("Invalid option. Please select one of the provided options.")
