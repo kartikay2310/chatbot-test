@@ -1,94 +1,503 @@
-# from flask import Flask, render_template, request, jsonify
+import os
+from botbuilder.core import BotFrameworkAdapter, BotFrameworkAdapterSettings, TurnContext
+from botbuilder.schema import Activity, ActivityTypes, Attachment, AttachmentLayoutTypes
+from botbuilder.core.integration import aiohttp_error_middleware
+from botframework.connector.auth import MicrosoftAppCredentials
+from aiohttp import web
+import base64
+import tempfile
 
-# app = Flask(__name__)
+APP_ID = os.environ.get("MicrosoftAppId", "")
+APP_PASSWORD = os.environ.get("MicrosoftAppPassword", "")
 
-# @app.route("/")
-# def home():
-#     return render_template("index.html")
+class TeamsBot:
+    def __init__(self):
+        self.conversation_state = {}
 
-# @app.route("/get")
-# def get_bot_response():
-#     user_input = request.args.get('msg')
-#     response, end_conversation = chat_logic(user_input)
-#     return jsonify(response=response, end_conversation=end_conversation)
+    async def on_turn(self, turn_context: TurnContext):
+        user_id = turn_context.activity.from_property.id
+        if user_id not in self.conversation_state:
+            self.conversation_state[user_id] = {"state": "start", "chat_log": []}
 
-# def chat_logic(user_input):
-#     # Initial options
-#     if user_input.lower() in ["start", "hi", "hello"]:
-#         return "Choose an option:\nA: Option A\nB: Option B", False
+        if turn_context.activity.type == ActivityTypes.message:
+            # Log user message
+            self.conversation_state[user_id]["chat_log"].append(f"User: {turn_context.activity.text}")
 
-#     # Handling the first choice
-#     if user_input.lower() == "a":
-#         return "You chose A. Now choose:\nC: Option C\nD: Option D", False
-#     elif user_input.lower() == "b":
-#         return "You chose B. Now choose:\nE: Option E\nF: Option F", False
+            text = turn_context.activity.text.lower()
+            state = self.conversation_state[user_id]["state"]
 
-#     # Handling the second choice for path A
-#     if user_input.lower() == "c":
-#         return "You chose C. Here is your final response for path A -> C. Bye!", True
-#     elif user_input.lower() == "d":
-#         return "You chose D. Here is your final response for path A -> D. Bye!", True
+            if text == "end chat":
+                await self._end_chat(turn_context,user_id)
+                return
 
-#     # Handling the second choice for path B
-#     if user_input.lower() == "e":
-#         return "You chose E. Here is your final response for path B -> E. Bye!", True
-#     elif user_input.lower() == "f":
-#         return "You chose F. Here is your final response for path B -> F. Bye!", True
+            if state == "start" and text == "start":
+                await self._ask_os_details(turn_context)
+                self.conversation_state[user_id]["state"] = "os_details"
+            elif state == "os_details":
+                self.conversation_state[user_id]["os_details"] = text
+                await self._ask_epo_version(turn_context)
+                self.conversation_state[user_id]["state"] = "epo_version"
+            elif state == "epo_version":
+                self.conversation_state[user_id]["epo_version"] = text
+                await self._ask_issue(turn_context)
+                self.conversation_state[user_id]["state"] = "issue"
+            elif state == "issue":
+                if text == "crash/hang":
+                    await self._crash_ques_1(turn_context)
+                    self.conversation_state[user_id]["state"] = "crash_ques_1"
+                elif text in ["communication", "tbd"]:
+                    self.conversation_state[user_id]["issue"] = text
+                    await self._end_conversation(turn_context)
+                    self.conversation_state[user_id]["state"] = "chat_options"
+                elif text == "licence":
+                    self.conversation_state[user_id]["issue"] = text
+                    await self._ask_licence_issue(turn_context)
+                    self.conversation_state[user_id]["state"] = "licence_issue"
+                else:
+                    await self._invalid_option(turn_context)
+                    await self._ask_issue(turn_context)
+            elif state == "crash_ques_1":
+                if text == "yes":
+                    await self._end_conversation(turn_context)
+                    self.conversation_state[user_id]["state"] = "chat_options"
+                elif text == "no":
+                    await self._crash_ques_2(turn_context)
+                    self.conversation_state[user_id]["state"] = "crash_ques_2"
+                else:
+                    await self._invalid_option(turn_context)
+                    await self._crash_ques_1(turn_context)
+            elif state == "crash_ques_2":
+                if text == "no":
+                    await self._crash_ques_b1_1(turn_context)
+                    self.conversation_state[user_id]["state"] = "crash_ques_b1_1"
+                elif text == "yes":
+                    await self._crash_ques_b2_1(turn_context)
+                    self.conversation_state[user_id]["state"] = "crash_ques_b2_1"
+                else:
+                    await self._invalid_option(turn_context)
+                    await self._crash_ques_2(turn_context)
+            elif state == "crash_ques_b2_1":
+                if text == "yes":
+                    await self._end_conversation(turn_context)
+                    self.conversation_state[user_id]["state"] = "chat_options"
+                elif text == "no":
+                    await self._show_contact_info_global(turn_context)
+                    await self._end_conversation(turn_context)
+                    self.conversation_state[user_id]["state"] = "chat_options"
+                else:
+                    await self._invalid_option(turn_context)
+                    await self._crash_ques_b2_1(turn_context)
+            elif state == "crash_ques_b1_1":
+                if text == "yes":
+                    await self._end_conversation(turn_context)
+                    self.conversation_state[user_id]["state"] = "chat_options"
+                elif text == "no":
+                    await self._crash_ques_b1_2(turn_context)
+                    self.conversation_state[user_id]["state"] = "crash_ques_b1_2"
+                else:
+                    await self._invalid_option(turn_context)
+                    await self._crash_ques_b1_1(turn_context)
+            elif state == "crash_ques_b1_2":
+                if text == "yes":
+                    await self._end_conversation(turn_context)
+                    self.conversation_state[user_id]["state"] = "chat_options"
+                elif text == "no":
+                    await self._show_contact_info_global(turn_context)
+                    self.conversation_state[user_id]["state"] = "crash_ques_2"
+                else:
+                    await self._invalid_option(turn_context)
+                    await self._crash_ques_b1_2(turn_context)
+            elif state == "licence_issue":
+                if text == "licence not getting activated":
+                    await self._ask_license_not_activated_issue(turn_context)
+                    self.conversation_state[user_id]["state"] = "license_not_activated_issue"
+                elif text == "incorrect version/quantity":
+                    await self._show_contact_info_pme(turn_context)
+                    await self._end_conversation(turn_context)
+                    self.conversation_state[user_id]["state"] = "chat_options"
+                elif text == "software related query":
+                    await self._software_ques_1(turn_context)
+                    self.conversation_state[user_id]["state"] = "software_related_query_check"
+                else:
+                    await self._invalid_option(turn_context)
+                    await self._ask_licence_issue(turn_context)
+            elif state == "license_not_activated_issue":
+                if text == "license already in use":
+                    self.conversation_state[user_id]["licence_issue"] = "license already in use"
+                    await self._show_contact_info_pme(turn_context)
+                    await self._end_conversation(turn_context)
+                    self.conversation_state[user_id]["state"] = "chat_options"
+                else:
+                    await self._invalid_option(turn_context)
+                    await self._ask_license_not_activated_issue(turn_context)
+            elif state == "software_related_query_check":
+                if text == "yes":
+                    await self._end_conversation(turn_context)
+                    self.conversation_state[user_id]["state"] = "chat_options"
+                elif text == "no":
+                    await self._software_ques_2(turn_context)
+                    self.conversation_state[user_id]["state"] = "software_related_query_check_2"
+                else:
+                    await self._invalid_option(turn_context)
+                    await self._software_ques_1(turn_context)
+            elif state == "software_related_query_check_2":
+                if text == "yes":
+                    await self._end_conversation(turn_context)
+                    self.conversation_state[user_id]["state"] = "chat_options"
+                elif text == "no":
+                    await self._show_contact_info_global(turn_context)
+                    await self._end_conversation(turn_context)
+                    self.conversation_state[user_id]["state"] = "chat_options"
+                else:
+                    await self._invalid_option(turn_context)
+                    await self._software_ques_2(turn_context)
+            elif state == "chat_options":
+                if text == "download":
+                    await self._send_chat_file(turn_context, user_id)
+                else:
+                    await self._invalid_option(turn_context)
+                    await self._show_chat_options(turn_context)
+            else:
+                await self._show_start_button(turn_context)
+        elif turn_context.activity.type == ActivityTypes.conversation_update:
+            await self._show_start_button(turn_context)
 
-#     return "Invalid choice. Please start by typing 'start', 'hi', or 'hello'.", False
+    async def _show_start_button(self, turn_context: TurnContext):
+        reply = Activity(
+            type=ActivityTypes.message,
+            text="Welcome! Click the Start button to begin.",
+            suggested_actions={
+                "actions": [
+                    {"type": "imBack", "title": "Start", "value": "start"},
+                ]
+            },
+        )
+        await turn_context.send_activity(reply)
 
-# if __name__ == "__main__":
-#     app.run()
-from flask import Flask, render_template, request, jsonify
+    async def _ask_os_details(self, turn_context: TurnContext):
+        reply = Activity(
+            type=ActivityTypes.message,
+            text="Please type your OS details.",
+            suggested_actions={
+                "actions": [
+                    {"type": "imBack", "title": "End Chat", "value": "end chat"},
+                ]
+            },
+        )
+        await turn_context.send_activity(reply)
+        self.conversation_state[turn_context.activity.from_property.id]["chat_log"].append("Bot: Please type your OS details.")
 
-app = Flask(__name__)
+    async def _ask_epo_version(self, turn_context: TurnContext):
+        reply = Activity(
+            type=ActivityTypes.message,
+            text="Please type your EPO version.",
+            suggested_actions={
+                "actions": [
+                    {"type": "imBack", "title": "End Chat", "value": "end chat"},
+                ]
+            },
+        )
+        await turn_context.send_activity(reply)
+        self.conversation_state[turn_context.activity.from_property.id]["chat_log"].append("Bot: Please type your EPO version.")
 
-@app.route("/")
-def home():
-    return render_template("index.html")
+    async def _ask_issue(self, turn_context: TurnContext):
+        reply = Activity(
+            type=ActivityTypes.message,
+            text="What issue are you facing?",
+            suggested_actions={
+                "actions": [
+                    {"type": "imBack", "title": "Crash/Hang", "value": "crash/hang"},
+                    {"type": "imBack", "title": "Communication", "value": "communication"},
+                    {"type": "imBack", "title": "Licence", "value": "licence"},
+                    {"type": "imBack", "title": "TBD", "value": "tbd"},
+                    {"type": "imBack", "title": "End Chat", "value": "end chat"},
+                ]
+            },
+        )
+        await turn_context.send_activity(reply)
+        self.conversation_state[turn_context.activity.from_property.id]["chat_log"].append("Bot: What issue are you facing?")
 
-@app.route("/get")
-def get_bot_response():
-    user_input = request.args.get('msg')
-    response, end_conversation = chat_logic(user_input)
-    return jsonify(response=response, end_conversation=end_conversation)
+    async def _crash_ques_1(self, turn_context: TurnContext, next_step=False):
+        contact_message = "Install the latest CU for your PO version."
+        await turn_context.send_activity(contact_message)
+        self.conversation_state[turn_context.activity.from_property.id]["chat_log"].append(f"Bot: {contact_message}")
 
-def chat_logic(user_input):
-    if not hasattr(chat_logic, "step"):
-        chat_logic.step = 0
+        if not next_step:
+            reply = Activity(
+                type=ActivityTypes.message,
+                text="Did this resolve your issue?",
+                suggested_actions={
+                    "actions": [
+                        {"type": "imBack", "title": "Yes", "value": "yes"},
+                        {"type": "imBack", "title": "No", "value": "no"},
+                    ]
+                },
+            )
+            await turn_context.send_activity(reply)
+            self.conversation_state[turn_context.activity.from_property.id]["chat_log"].append("Bot: Did this resolve your issue?")
 
-    if chat_logic.step == 0:
-        chat_logic.step += 1
-        return "Please provide your OS details:", False
-    
-    if chat_logic.step == 1:
-        chat_logic.os_details = user_input
-        chat_logic.step += 1
-        return "Please provide your driver version:", False
+    async def _ask_licence_issue(self, turn_context: TurnContext):
+        reply = Activity(
+            type=ActivityTypes.message,
+            text="What licence issue are you facing?",
+            suggested_actions={
+                "actions": [
+                    {"type": "imBack", "title": "Licence not getting activated", "value": "licence not getting activated"},
+                    {"type": "imBack", "title": "Software related query", "value": "software related query"},
+                    {"type": "imBack", "title": "Incorrect Version/Quantity", "value": "incorrect version/quantity"},
+                    {"type": "imBack", "title": "End Chat", "value": "end chat"},
+                ]
+            },
+        )
+        await turn_context.send_activity(reply)
+        self.conversation_state[turn_context.activity.from_property.id]["chat_log"].append("Bot: What licence issue are you facing?")
 
-    if chat_logic.step == 2:
-        chat_logic.driver_version = user_input
-        chat_logic.step += 1
-        return f"OS details: {chat_logic.os_details}, Driver version: {chat_logic.driver_version}. Choose an option:\nA: Option A\nB: Option B", False
+    async def _ask_license_not_activated_issue(self, turn_context: TurnContext):
+        reply = Activity(
+            type=ActivityTypes.message,
+            text="What issue are you facing with licence activation?",
+            suggested_actions={
+                "actions": [
+                    {"type": "imBack", "title": "License already in use", "value": "license already in use"},
+                    {"type": "imBack", "title": "End Chat", "value": "end chat"},
+                ]
+            },
+        )
+        await turn_context.send_activity(reply)
+        self.conversation_state[turn_context.activity.from_property.id]["chat_log"].append("Bot: What issue are you facing with licence activation?")
 
-    if chat_logic.step == 3 and user_input.lower() == "a":
-        chat_logic.step += 1
-        return "You chose A. Now choose:\nC: Option C\nD: Option D", False
-    elif chat_logic.step == 3 and user_input.lower() == "b":
-        chat_logic.step += 1
-        return "You chose B. Now choose:\nE: Option E\nF: Option F", False
+    async def _crash_ques_2(self, turn_context: TurnContext, next_step=False):
+        contact_message = " Check for Exception report .zip file with crash timestamp generated in PO logs folder."
+        await turn_context.send_activity(contact_message)
+        self.conversation_state[turn_context.activity.from_property.id]["chat_log"].append(f"Bot: {contact_message}")
 
-    if chat_logic.step == 4:
-        if user_input.lower() == "c":
-            return "You chose C. Here is your final response for path A -> C. Bye!", True
-        elif user_input.lower() == "d":
-            return "You chose D. Here is your final response for path A -> D. Bye!", True
-        elif user_input.lower() == "e":
-            return "You chose E. Here is your final response for path B -> E. Bye!", True
-        elif user_input.lower() == "f":
-            return "You chose F. Here is your final response for path B -> F. Bye!", True
+        if not next_step:
+            reply = Activity(
+                type=ActivityTypes.message,
+                text="Is it generated ?",
+                suggested_actions={
+                    "actions": [
+                        {"type": "imBack", "title": "Yes", "value": "yes"},
+                        {"type": "imBack", "title": "No", "value": "no"},
+                    ]
+                },
+            )
+            await turn_context.send_activity(reply)
+            self.conversation_state[turn_context.activity.from_property.id]["chat_log"].append("Bot: Is it genereated?")
 
-    return "Invalid input. Please start by typing 'start', 'hi', or 'hello'.", False
+
+    async def _crash_ques_b2_1(self, turn_context: TurnContext, next_step=False): #here b2 = branch 2 1=ques 1
+        contact_message = "Check for relevant information in the syslog file in the exception report zip."
+        await turn_context.send_activity(contact_message)
+        self.conversation_state[turn_context.activity.from_property.id]["chat_log"].append(f"Bot: {contact_message}")
+
+        if not next_step:
+            reply = Activity(
+                type=ActivityTypes.message,
+                text="Did this resolve your issue?",
+                suggested_actions={
+                    "actions": [
+                        {"type": "imBack", "title": "Yes", "value": "yes"},
+                        {"type": "imBack", "title": "No", "value": "no"},
+                    ]
+                },
+            )
+            await turn_context.send_activity(reply)
+            self.conversation_state[turn_context.activity.from_property.id]["chat_log"].append("Bot: Did this resolve your issue?")
+
+    async def _crash_ques_b1_1(self, turn_context: TurnContext, next_step=False): #here b2 = branch 2 1=ques 1
+        contact_message = "Confirm that client window is not closed by any custom CiCoide or license failure."
+        await turn_context.send_activity(contact_message)
+        self.conversation_state[turn_context.activity.from_property.id]["chat_log"].append(f"Bot: {contact_message}")
+
+        if not next_step:
+            reply = Activity(
+                type=ActivityTypes.message,
+                text="Did this resolve your issue?",
+                suggested_actions={
+                    "actions": [
+                        {"type": "imBack", "title": "Yes", "value": "yes"},
+                        {"type": "imBack", "title": "No", "value": "no"},
+                    ]
+                },
+            )
+            await turn_context.send_activity(reply)
+            self.conversation_state[turn_context.activity.from_property.id]["chat_log"].append("Bot: Did this resolve your issue?")
+
+    async def _crash_ques_b1_2(self, turn_context: TurnContext, next_step=False): #here b2 = branch 2 1=ques 1
+        contact_message = "Check windows event viewer for any Citect process message."
+        await turn_context.send_activity(contact_message)
+        self.conversation_state[turn_context.activity.from_property.id]["chat_log"].append(f"Bot: {contact_message}")
+
+        if not next_step:
+            reply = Activity(
+                type=ActivityTypes.message,
+                text="Did this resolve your issue?",
+                suggested_actions={
+                    "actions": [
+                        {"type": "imBack", "title": "Yes", "value": "yes"},
+                        {"type": "imBack", "title": "No", "value": "no"},
+                    ]
+                },
+            )
+            await turn_context.send_activity(reply)
+            self.conversation_state[turn_context.activity.from_property.id]["chat_log"].append("Bot: Did this resolve your issue?")
+
+
+    async def _ask_issue_resolved(self, turn_context: TurnContext):
+        reply = Activity(
+            type=ActivityTypes.message,
+            text="Did this resolve your issue?",
+            suggested_actions={
+                "actions": [
+                    {"type": "imBack", "title": "Yes", "value": "yes"},
+                    {"type": "imBack", "title": "No", "value": "no"},
+                ]
+            },
+        )
+        await turn_context.send_activity(reply)
+        self.conversation_state[turn_context.activity.from_property.id]["chat_log"].append("Bot: Did this resolve your issue?")
+
+
+
+    async def _show_contact_info_pme(self, turn_context: TurnContext):
+        contact_message = "Please contact support at pme-ordersupport@schneider-electric.com with your ActivationID and other requirements."
+        await turn_context.send_activity(contact_message)
+        self.conversation_state[turn_context.activity.from_property.id]["chat_log"].append(f"Bot: {contact_message}")
+
+    async def _software_ques_1(self, turn_context: TurnContext, next_step=False):
+        contact_message = "Check for valid license and required license count is present in lecensing tool LCT/FLM."
+        await turn_context.send_activity(contact_message)
+        self.conversation_state[turn_context.activity.from_property.id]["chat_log"].append(f"Bot: {contact_message}")
+
+        if not next_step:
+            reply = Activity(
+                type=ActivityTypes.message,
+                text="Did this resolve your issue?",
+                suggested_actions={
+                    "actions": [
+                        {"type": "imBack", "title": "Yes", "value": "yes"},
+                        {"type": "imBack", "title": "No", "value": "no"},
+                    ]
+                },
+            )
+            await turn_context.send_activity(reply)
+            self.conversation_state[turn_context.activity.from_property.id]["chat_log"].append("Bot: Did this resolve your issue?")
+
+    async def _software_ques_2(self, turn_context: TurnContext, next_step=False):
+        contact_message = "Collect client service/System services kernel dump from all PO machine in architecture to verify licencse acquisition."
+        await turn_context.send_activity(contact_message)
+        self.conversation_state[turn_context.activity.from_property.id]["chat_log"].append(f"Bot: {contact_message}")
+
+        if not next_step:
+            reply = Activity(
+                type=ActivityTypes.message,
+                text="Did this resolve your issue?",
+                suggested_actions={
+                    "actions": [
+                        {"type": "imBack", "title": "Yes", "value": "yes"},
+                        {"type": "imBack", "title": "No", "value": "no"},
+                    ]
+                },
+            )
+            await turn_context.send_activity(reply)
+            self.conversation_state[turn_context.activity.from_property.id]["chat_log"].append("Bot: Did this resolve your issue?")
+
+    async def _show_contact_info_global(self, turn_context: TurnContext):
+        msg = "Please contact support at global-ems-tech-support@schneider-electric.com with PO Logs, Architecture, and licence machine details."
+        await turn_context.send_activity(msg)
+        self.conversation_state[turn_context.activity.from_property.id]["chat_log"].append(f"Bot: {msg}")
+
+    async def _invalid_option(self, turn_context: TurnContext):
+        await turn_context.send_activity("Invalid option. Please select one of the provided options.")
+        self.conversation_state[turn_context.activity.from_property.id]["chat_log"].append("Bot: Invalid option. Please select one of the provided options.")
+
+    async def _end_conversation(self, turn_context: TurnContext):
+        user_id = turn_context.activity.from_property.id
+        os_details = self.conversation_state[user_id].get("os_details", "Not provided")
+        epo_version = self.conversation_state[user_id].get("epo_version", "Not provided")
+        issue = self.conversation_state[user_id].get("issue", "Not provided")
+        licence_issue = self.conversation_state[user_id].get("licence_issue", "Not provided")
+
+        summary = f"Thank you for your responses.\nOS Details: {os_details}\nEPO Version: {epo_version}\nIssue: {issue}\nLicence Issue: {licence_issue}"
+        await turn_context.send_activity(summary)
+        self.conversation_state[user_id]["chat_log"].append(f"Bot: {summary}")
+
+        await self._show_chat_options(turn_context)
+
+    async def _show_chat_options(self, turn_context: TurnContext):
+        reply = Activity(
+            type=ActivityTypes.message,
+            text="Would you like to download the chat log?",
+            suggested_actions={
+                "actions": [
+                    {"type": "imBack", "title": "Download", "value": "download"},
+                    {"type": "imBack", "title": "End Chat", "value": "end chat"},
+                ]
+            },
+        )
+        await turn_context.send_activity(reply)
+
+    async def _send_chat_file(self, turn_context: TurnContext, user_id: str):
+        chat_log = "\n".join(self.conversation_state[user_id]["chat_log"])
+        
+        with tempfile.NamedTemporaryFile(mode='w+', delete=False, suffix='.txt') as temp_file:
+            temp_file.write(chat_log)
+            temp_file_path = temp_file.name
+
+        with open(temp_file_path, 'rb') as file:
+            file_content = file.read()
+        
+        base64_content = base64.b64encode(file_content).decode()
+
+        attachment = Attachment(
+            content_type="text/plain",
+            name="chat_log.txt",
+            content_url=f"data:text/plain;base64,{base64_content}"
+        )
+
+        reply = Activity(
+            type=ActivityTypes.message,
+            attachments=[attachment],
+            attachment_layout=AttachmentLayoutTypes.list
+        )
+
+        await turn_context.send_activity(reply)
+        await turn_context.send_activity("Chat log file has been sent. You can download it from the attachment.")
+        
+        os.unlink(temp_file_path)  # Delete the temporary file
+
+        await self._show_chat_options(turn_context)
+
+
+    async def _end_chat(self, turn_context: TurnContext, user_id: str):
+        await turn_context.send_activity("Chat has been ended. Click 'Start' to begin a new chat.")
+        self.conversation_state[user_id] = {"state": "start", "chat_log": []}
+        await self._show_start_button(turn_context)
+
+# Create adapter and bot
+settings = BotFrameworkAdapterSettings(APP_ID, APP_PASSWORD)
+adapter = BotFrameworkAdapter(settings)
+bot = TeamsBot()
+
+# Listen for incoming requests on /api/messages
+async def messages(req: web.Request) -> web.Response:
+    body = await req.json()
+    activity = Activity().deserialize(body)
+    auth_header = req.headers["Authorization"] if "Authorization" in req.headers else ""
+
+    async def call_bot(turn_context):
+        await bot.on_turn(turn_context)
+
+    try:
+        await adapter.process_activity(activity, auth_header, call_bot)
+        return web.Response(status=200)
+    except Exception as e:
+        print(f"Error processing request: {str(e)}")
+        raise web.HTTPBadRequest()
+
+app = web.Application(middlewares=[aiohttp_error_middleware])
+app.router.add_post("/api/messages", messages)
 
 if __name__ == "__main__":
-    app.run()
+    web.run_app(app, host="localhost", port=3978)
